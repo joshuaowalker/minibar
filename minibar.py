@@ -760,9 +760,10 @@ def minibar(ops):
     ops.isfastq = isfastq
 
     max_search_area = ops.search_len
-    ixed = ops.index_edit_distance
-    max_dist_index  = ixed if (ixed >= 1) else len_first_index - int(len_first_index * ixed)
-    max_dist_primer = int(len_fwd_primer * 0.3 + 3) if ops.primer_edit_distance==-1 else ops.primer_edit_distance
+    max_dist_index = len_first_index - int(len_first_index * ops.pct_match)
+    max_dist_primer = len_fwd_primer - int(len_fwd_primer * ops.pct_match)
+    if ops.index_edit_distance != -1: max_dist_index = ops.index_edit_distance
+    if ops.primer_edit_distance != -1: max_dist_primer = ops.primer_edit_distance
 
     info_msg = '{} {} : Index edit dist {}, Primer edit dist {}, Search Len {}, Search Method {}, Output Type {}'
     print(info_msg.format(ops.primerfile, ops.sequencefile, max_dist_index, max_dist_primer,
@@ -949,7 +950,8 @@ def getoptions(argv):
         search_len = 80
         num_seqs = -1  # -1 means all sequences
         start_seq = 0  # 0 means start with first seq
-        index_edit_distance = .75  # if < 0 it is a percentage to calculate
+        pct_match = .75 # percentage match for index and primer
+        index_edit_distance = -1  # -1 means calculate based on index length
         primer_edit_distance = -1  # -1 means calculate based on primer length
         search_method = 3  # 2: means weak match of pairs, 1: strong ix/prm match at seq begin, 3: try 1, then 2
 
@@ -1035,7 +1037,7 @@ def getoptions(argv):
                 if op == 'l':
                     opts.search_len = int(val)
                 elif op == 'p':
-                    opts.index_edit_distance = float(val)
+                    opts.pct_match = float(val)
                 elif op == 'k' or op == 'e':
                     opts.index_edit_distance = int(val)
                 elif op == 'K' or op == 'E':
