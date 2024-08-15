@@ -467,11 +467,11 @@ def search_sequence_list(seq_number, rec_seqs, rec_hdrs, rec_quals, ops, fh_map)
     global H, HH, Hh, hh, hx, samps, mult_ids
 
     USE_FWD_INDEXES = True; USE_REV_INDEXES = False
-    HH_method = 1; hh_method = 2; Hh_method = 3; single_h_method = 0  # add 0 method 31Mar2020
+    HH_method_strict = 4; HH_method = 1; hh_method = 2; Hh_method = 3; single_h_method = 0  # add 0 method 31Mar2020
     unknown_id = 'unk'
     outtype = ops.output
     search_method = ops.search_method
-    assert(search_method in [HH_method, Hh_method, hh_method, single_h_method])
+    assert(search_method in [HH_method_strict, HH_method, Hh_method, hh_method, single_h_method])
     show_color = ops.show_color
 
     seq_ix = -1
@@ -508,7 +508,7 @@ def search_sequence_list(seq_number, rec_seqs, rec_hdrs, rec_quals, ops, fh_map)
                 ix2 = best[1]
                 ix2_loc = rcrslt[3]; prm2_loc = rcrslt[5]
                 ed2 = '('+str(best[0])+','+str(best[3])+')'
-            else:  # no primer hit, see if there are any index matches
+            elif search_method != HH_method_strict:  # no primer hit, see if there are any index matches
                 rcrslt = (strand2,) + tuple(ind_matches)
                 if len(ind_matches) == 0:
                     strength = 'Hx'
@@ -534,6 +534,9 @@ def search_sequence_list(seq_number, rec_seqs, rec_hdrs, rec_quals, ops, fh_map)
                     ix2_loc = best_im[2][0]
                     strength = 'Hh'
                     ed2 = '({},-1)'.format(best_im[1])  # score
+            else: #Strict HH method, no reverse hit
+                strength = 'Hx'
+                ed2 = '(-1,-1)'
             sample_id = sample_id_from_indexes(ix1, ix2, strand == '-') if ID_matches <= 1 else all_ids.strip()
             if sample_id != '': samps += 1
             else: sample_id = unknown_id
@@ -796,7 +799,7 @@ def minibar(ops):
 
     elapsed = timeit.default_timer() - start_time
 
-    if ops.search_method == 1:
+    if ops.search_method in [1, 4]: #HH method or HH method strict
         hits = 'H {} HH {} Hh {}'.format(H, HH, Hh)
     elif ops.search_method == 2:
         hits = 'hh {}'.format(hh)
@@ -855,7 +858,7 @@ def usage(show_all_descrips=False):
 
     usage = """
     Usage: minibar.py barcode_file sequence_file [-pct <pct> | -e <int> -E <int>] [-l <int>]
-                                                 [-F [-P <prefix>]] [-M 1|2|3]
+                                                 [-F [-P <prefix>]] [-M 1|2|3|4]
                                                  [-S | -T | -C | -CC | -D]
                                                  [-cols <int_list>] [-info cols|fwd|rev|primer]
                                                  [-w] [-fh | -nh] [-n <num_seqs> | -n <first_seq>,<num_seqs>]
@@ -877,11 +880,12 @@ def usage(show_all_descrips=False):
         -f write to stdout instead of creating files (default: True)
         -P <str> if -F, <str> is prefix for individual files, followed by sample ID. (default: sample_)
 
-        -M 1|2|3 Method to identify sample types using the barcodes (default: 3)
+        -M 1|2|3|4 Method to identify sample types using the barcodes (default: 3)
                  1 requires approximate match of barcode and primer at sequence start, this
                    and barcodes matched at the other end are used to identify sample IDs
                  2 finds matched barcodes on both ends of sequence, identifies pairs that match a sample ID
                  3 uses Method 1 and if it does not succeed, uses Method 2
+                 4 requires approximate match of barcode and primer at sequence start and end
                 (0 identify sample ID even if only one barcode found -- ambiguous if barcodes not unique)
 
         -S outputs sequence record in fasta or fastq format of input (default output)
@@ -1045,7 +1049,7 @@ def getoptions(argv):
                 elif op == 'P':
                     opts.output_file_prefix = val
                 elif op == 'M':
-                    opts.search_method = int(val) if int(val) in [1,2,3,0] else 1
+                    opts.search_method = int(val) if int(val) in [1,2,3,4,0] else 1
             else:
                 unrecog = arg
                 break
