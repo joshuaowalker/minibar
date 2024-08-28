@@ -415,17 +415,15 @@ def choose_best_index(index_matches, primer_matches):
     if primer_score > -1:
         for pm in primer_matches[1]: 
             pm_beg = pm[0]
-            closest = 999
             for im in index_matches:
                 score = im[1]
                 for loc in im[2]:
                     close = abs(abs(pm_beg - loc[1])-1)
                     if close < CLOSE_ENOUGH:
-                        if score < best_score or (score==best_score and close < closest):
+                        if score < best_score:
                             best_score = score
-                            closest = close
                             best_matches = [(im, loc, pm, close)]
-                        elif score == best_score and close == closest:
+                        elif score == best_score:
                             best_matches.append((im, loc, pm, close))
         
     if len(best_matches) == 0:
