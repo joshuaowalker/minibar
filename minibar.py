@@ -404,31 +404,38 @@ def search_seq_for_indexes(seq, indexes):
 # -1, '', () for index no-match; -1, () for primer no match
 def choose_best_index(index_matches, primer_matches):
     CLOSE_ENOUGH = 5
-    best_score = 999; best_im = None; best_loc = None; primer_loc = None
+    best_score = 999
+    best_matches = []
     no_result = (-1, '', (), -1, ())
-
+            
     if len(index_matches) == 0 or len(primer_matches) == 0:
         return no_result
-
+                
     primer_score = primer_matches[0]
     if primer_score > -1:
-        # loop over primers first, since there is usually 1 or none rather than more, unlike index close matches
-        for pm in primer_matches[1]:  # each pm is a tuple of the primer beg, end position
-            pm_beg = pm[0]; closest = 999
+        for pm in primer_matches[1]: 
+            pm_beg = pm[0]
+            closest = 999
             for im in index_matches:
                 score = im[1]
                 for loc in im[2]:
                     close = abs(abs(pm_beg - loc[1])-1)
-                    if close < CLOSE_ENOUGH:  # good primer match right after good index match
-                        if score < best_score or (score==best_score and close < closest):  # better score or same score and closer
-                            best_im = im
-                            best_loc = loc
-                            primer_loc = pm
-                            closest = close
+                    if close < CLOSE_ENOUGH:
+                        if score < best_score or (score==best_score and close < closest):
                             best_score = score
-
-    return (best_im[1], best_im[0], best_loc, primer_score, primer_loc) if best_im else no_result
-
+                            closest = close
+                            best_matches = [(im, loc, pm, close)]
+                        elif score == best_score and close == closest:
+                            best_matches.append((im, loc, pm, close))
+        
+    if len(best_matches) == 0:
+        return no_result
+    elif len(best_matches) == 1:
+        best_im, best_loc, primer_loc, _ = best_matches[0]
+        return (best_im[1], best_im[0], best_loc, primer_score, primer_loc)
+    else:
+        # TODO Handle ambiguous matches
+        return no_result
 
 def find_best_index(seq, fwd=True):
     global ind_matches, prm_matches
