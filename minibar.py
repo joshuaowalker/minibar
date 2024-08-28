@@ -419,7 +419,7 @@ def choose_best_index(index_matches, primer_matches):
                 
     primer_score = primer_matches[0]
     if primer_score > -1:
-        for pm in primer_matches[1]: 
+        for pm in primer_matches[1]:
             pm_beg = pm[0]
             for im in index_matches:
                 score = im[1]
@@ -431,7 +431,7 @@ def choose_best_index(index_matches, primer_matches):
                             best_matches = [(im, loc, pm, close)]
                         elif score == best_score:
                             best_matches.append((im, loc, pm, close))
-        
+
     if len(best_matches) == 0:
         return no_result
     elif len(best_matches) == 1:
