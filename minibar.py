@@ -9,7 +9,6 @@ except:
     print("\n    edlib module not found, to install use:\n\n        pip install edlib\n", file=sys.stderr)
     exit(3)
 
-
 def read_barcode_file(primer_filename, ops):
     global fwd_indexes, rev_indexes
     global len_first_index
@@ -346,14 +345,18 @@ def sample_id_from_indexes(index1, index2, check_rev_first=None):
         return map_one[key]
     elif key in map_two:
         return map_two[key]
+         
     return ''
 
-#    if key in indx2sample_map_fr:
-#        return indx2sample_map_fr[key]
-#    elif key in indx2sample_map_rf:
-#        return indx2sample_map_rf[key]
-#    return ''
-
+def modify_seq_with_quality(seq, qual, quality_threshold):
+    modified_seq = ''
+    for base, q_score in zip(seq, qual):
+        phred_score = ord(q_score) - 33  # Assuming Sanger format (Phred+33)
+        if phred_score >= quality_threshold:
+            modified_seq += base
+        else:
+            modified_seq += 'N'
+    return modified_seq
 
 def ids_from_index_matches(ind_match_1, ind_match_2):
     id_list = []; id_dict = {}
@@ -381,16 +384,19 @@ def primer_positions(seq, primer):
 # this uses edlib.align()
 max_dist_index = 4
 max_search_area = 80
-def search_seq_for_indexes(seq, indexes):
+
+def search_seq_for_indexes(seq, qual, indexes, quality_threshold):
     rslts = []
     seq_prefix = seq[:max_search_area]
+    qual_prefix = qual[:max_search_area]
+    modified_seq_prefix = modify_seq_with_quality(seq_prefix, qual_prefix, quality_threshold)
+
     for query in indexes:
-        rs = edlib.align(query, seq_prefix, 'HW', 'locations', max_dist_index)
+        rs = edlib.align(query, modified_seq_prefix, task='locations', mode='HW', k=max_dist_index, additionalEqualities=IUPAC_maps)
         dist = rs['editDistance']
         if dist > -1:
             rslts.append([query, dist, rs['locations']])
     return rslts
-
 
 # index_matches are zero, one or more matches of an index query
 #   (if more than 1, they will have have the same dist score).
@@ -435,23 +441,25 @@ def choose_best_index(index_matches, primer_matches):
         # TODO Handle ambiguous matches
         return no_result
 
-def find_best_index(seq, fwd=True):
+def find_best_index(seq, qual, quality_threshold, fwd=True):
     global ind_matches, prm_matches
     indexes = fwd_indexes if fwd else rev_indexes
     primer = fwd_primer if fwd else rev_primer
 
-    ind_matches = search_seq_for_indexes(seq, indexes)
+    ind_matches = search_seq_for_indexes(seq, qual, indexes, quality_threshold)
     prm_matches = primer_positions(seq, primer)
     return choose_best_index(ind_matches, prm_matches)
 
-def search_for_best_index(seq):
+
+def search_for_best_index(seq, qual, quality_threshold):
     global best_index
 
     no_result = (-1, '', (), -1, ())
 
     strand = '?'; best = [-1]
-    bestfwd = find_best_index(seq, True)  # true means use fwd indexes
-    bestrev = find_best_index(seq, False)
+
+    bestfwd = find_best_index(seq, qual, quality_threshold, True)  # true means use fwd indexes
+    bestrev = find_best_index(seq, qual, quality_threshold, False)
 
     if bestfwd[0] == -1 and bestrev[0] != -1:
         best = bestrev
@@ -498,9 +506,11 @@ def search_sequence_list(seq_number, rec_seqs, rec_hdrs, rec_quals, ops, fh_map)
         ix2 = ''
         ix1_loc = prm1_loc = ix2_loc = prm2_loc = rslt = None
 
+        fqual = rec_quals[seq_ix]
+
         strand = '?'  # easy way to shoehorn in new method without deeper indentation
         if not search_method in [hh_method, single_h_method]:   # replaced search_method != hh_method
-            rslt = search_for_best_index(fseq)  # looking for a good match of an index close to a primer
+            rslt = search_for_best_index(fseq, fqual, ops.quality_threshold)  # looking for a good match of an index close to a primer
             strand = rslt[0]
 
         if strand != '?':  # strong hit for beginning index & primer, check ending index
@@ -509,13 +519,14 @@ def search_sequence_list(seq_number, rec_seqs, rec_hdrs, rec_quals, ops, fh_map)
             ixed1 = rslt[1]; prmed1=rslt[4]; ed1='('+str(ixed1)+','+str(prmed1)+')'
             ix1_loc = rslt[3]; prm1_loc = rslt[5]
             rc_fseq = rev_comp(fseq)
+            rc_fqual = fqual[::-1]
             if strand == '+':  # found fwd indexes at beginning of seq, search revcomp of seq for rev indexes
                 strand2 = '-'
-                best = find_best_index(rc_fseq, USE_REV_INDEXES)
+                best = find_best_index(rc_fseq, rc_fqual, ops.quality_threshold, USE_REV_INDEXES)
             else:  # found rev indexes at beginning of seq, search revcomp of seq for fwd indexes
                 assert strand == '-'
                 strand2 = '+'
-                best = find_best_index(rc_fseq, USE_FWD_INDEXES)
+                best = find_best_index(rc_fseq, rc_fqual, ops.quality_threshold, USE_FWD_INDEXES)
 
             if best[0] != -1:  # strong hit for ending index too
                 rcrslt = (strand2,) + best
@@ -563,9 +574,10 @@ def search_sequence_list(seq_number, rec_seqs, rec_hdrs, rec_quals, ops, fh_map)
             rcrslt = (-1, '', (), -1, ())
 
             rc_fseq = rev_comp(fseq)
+            rc_fqual = fqual[::-1]
 
-            beg_fwd = search_seq_for_indexes(fseq, fwd_indexes)
-            end_rev = search_seq_for_indexes(rc_fseq, rev_indexes)
+            beg_fwd = search_seq_for_indexes(fseq, fqual, fwd_indexes, ops.quality_threshold)
+            end_rev = search_seq_for_indexes(rc_fseq, rc_fqual, rev_indexes, ops.quality_threshold)
             fr_ids = ids_from_index_matches(beg_fwd, end_rev)
             if len(fr_ids) > 0:
                 strand  = '+'
@@ -576,8 +588,8 @@ def search_sequence_list(seq_number, rec_seqs, rec_hdrs, rec_quals, ops, fh_map)
                 ed1 = '({})'.format(beg_fwd[0][1])
                 ed2 = '({})'.format(end_rev[0][1])
 
-            beg_rev = search_seq_for_indexes(fseq, rev_indexes)
-            end_fwd = search_seq_for_indexes(rc_fseq, fwd_indexes)
+            beg_rev = search_seq_for_indexes(fseq, fqual, rev_indexes, ops.quality_threshold)
+            end_fwd = search_seq_for_indexes(rc_fseq, rc_fqual, fwd_indexes, ops.quality_threshold)
             rf_ids = ids_from_index_matches(beg_rev, end_fwd)
             if len(rf_ids) > 0 and strand == '?':
                 strand = '-'
@@ -758,7 +770,9 @@ def get_sample_fh(sampID, fh_map, prefix, isfastq):
         sample_fh = open(sample_filename, 'w')
         fh_map[sampID] = sample_fh
         return sample_fh
-    except:
+    except e:
+        print ("Exception: {}".format(e))
+        exit(1)
         return sys.stdout
 
 
@@ -974,6 +988,7 @@ def getoptions(argv):
         index_edit_distance = -1  # -1 means calculate based on index length
         primer_edit_distance = -1  # -1 means calculate based on primer length
         search_method = 3  # 2: means weak match of pairs, 1: strong ix/prm match at seq begin, 3: try 1, then 2
+        quality_threshold = 0 #threshold for use of 'N' as ambiguous base when searching for barcodes
 
         output_to_files = False  # True means write sequences to individual sample ID files
         output_file_prefix = 'sample_'
@@ -1004,7 +1019,7 @@ def getoptions(argv):
             print(version())
             sys.exit(0)
 
-        if arg[0] != '-':  # first 2 args without '-' are primer file and sequence file name
+        if arg[0] != '-':  # first 2 args without '-' are primer file and sequence file
             if opts.primerfile == "":
                 opts.primerfile = arg
             elif opts.sequencefile == "":
@@ -1025,7 +1040,7 @@ def getoptions(argv):
                 opts.output_to_files = False
             elif op == 'w':  # treat duplicate samples as warning not error
                 opts.error_on_duplicate_samples = False
-            elif op in 'pkeKElMncPi':  # these have a value after option
+            elif op in 'pkeKElMncPiQ':  # these have a value after option
                 ix_arg += 1
                 if ix_arg > (num_args - 1):
                     error('expected value after {}'.format(arg))
@@ -1051,7 +1066,7 @@ def getoptions(argv):
                     else:
                         unrecog = arg
 
-                if (op in 'lkeKEM' and not have_int) or (op == 'p' and not have_float):
+                if (op in 'lkeKEMQ' and not have_int) or (op == 'p' and not have_float):
                     num_err(arg, val)
 
                 if op == 'l':
@@ -1066,6 +1081,8 @@ def getoptions(argv):
                     opts.output_file_prefix = val
                 elif op == 'M':
                     opts.search_method = int(val) if int(val) in [1,2,3,4,0] else 1
+                elif op == 'Q':
+                    opts.quality_threshold = int(val)
             else:
                 unrecog = arg
                 break
