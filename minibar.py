@@ -444,22 +444,33 @@ def find_best_index(seq, fwd=True):
     prm_matches = primer_positions(seq, primer)
     return choose_best_index(ind_matches, prm_matches)
 
-
-def search_for_best_index(seq, skip_fwdchk=False):
+def search_for_best_index(seq):
     global best_index
 
-    strand = '?'; best = [-1]
-    if not skip_fwdchk:
-        best = find_best_index(seq, True)  # true means use fwd indexes
+    no_result = (-1, '', (), -1, ())
 
-    if best[0] == -1:  # try rev indexes and primer
-        best = find_best_index(seq, False)  # False means use rev indexes
-        if best[0] != -1:
-            best_index = best[1]
-            strand = '-'
-    else:  # found it with fwd indexes
-        best_index = best[1]
+    strand = '?'; best = [-1]
+    bestfwd = find_best_index(seq, True)  # true means use fwd indexes
+    bestrev = find_best_index(seq, False)
+
+    if bestfwd[0] == -1 and bestrev[0] != -1:
+        best = bestrev
+        best_index = bestrev[1]
+        strand = '-'
+    elif bestrev[0] == -1 and bestfwd[0] != -1:
+        best = bestfwd
+        best_index = bestfwd[1]
         strand = '+'
+    elif bestrev[0] < bestfwd[0]:
+        best = bestrev
+        best_index = bestrev[1]
+        strand = '-'
+    elif bestfwd[0] < bestrev[0]:
+        best = bestfwd
+        best_index = bestfwd[1]
+        strand = '+'
+    else: #ambiguous
+        best = no_result
 
     return (strand,) + best
 
